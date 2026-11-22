@@ -176,7 +176,7 @@ export const openideaTheme = EditorView.theme({
     lineHeight: "var(--openidea-editor-line-height, var(--lh-code))",
     fontVariantLigatures: "none",
   },
-  ".cm-scroller": { overscrollBehavior: "contain", contain: "layout paint style" },
+  ".cm-scroller": { overscrollBehavior: "contain" },
   ".cm-content": {
     // no top padding: the first line starts at the top edge, as in IDEA, and so does its selection
     padding: "0 0 8px 0",

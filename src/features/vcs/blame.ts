@@ -372,7 +372,11 @@ function lineAt(view: EditorView, from: number): BlameLine | undefined {
   return found;
 }
 
+const highlightedCommit = new WeakMap<EditorView, string | null>();
+
 function highlightSameCommit(view: EditorView, commit: string | null) {
+  if (!commit && !highlightedCommit.get(view)) return;
+  highlightedCommit.set(view, commit);
   for (const el of view.dom.querySelectorAll<HTMLElement>(".cm-vcs-blame .cm-gutterElement")) {
     const line = el.querySelector<HTMLElement>(".cm-vcs-blame-line");
     el.classList.toggle("cm-vcs-blame-same-commit", !!commit && line?.dataset.commit === commit);
