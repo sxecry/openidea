@@ -107,12 +107,14 @@ export const overviewStyles = {
   "&.cm-openidea-withOverview .cm-scroller::-webkit-scrollbar:vertical": { width: "0" },
   ".cm-openidea-overviewThumb": {
     position: "absolute",
+    top: "0",
     right: "2px",
     width: "6px",
     borderRadius: "3px",
     background: "var(--scrollbar-thumb)",
     pointerEvents: "auto",
     cursor: "default",
+    willChange: "transform",
   },
   ".cm-openidea-overview-onThumb .cm-openidea-overviewThumb": { background: "var(--scrollbar-thumb-hover)" },
   ".cm-openidea-overviewCaret": {
@@ -127,7 +129,7 @@ export const overviewStyles = {
 
 export const openideaTheme = EditorView.theme({
   // Not on "&": the tooltip container in `body` carries the theme classes too.
-  "&.cm-editor": { height: "100%" },
+  "&.cm-editor": { height: "100%", contain: "layout style" },
   "&": {
     backgroundColor: "var(--bg-editor, var(--bg-island, var(--bg-app)))",
     color: "var(--fg-editor, var(--fg))",
@@ -174,7 +176,7 @@ export const openideaTheme = EditorView.theme({
     lineHeight: "var(--openidea-editor-line-height, var(--lh-code))",
     fontVariantLigatures: "none",
   },
-  ".cm-scroller": { overscrollBehavior: "contain" },
+  ".cm-scroller": { overscrollBehavior: "contain", contain: "layout paint style" },
   ".cm-content": {
     // no top padding: the first line starts at the top edge, as in IDEA, and so does its selection
     padding: "0 0 8px 0",

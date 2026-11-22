@@ -139,6 +139,12 @@ class StickyScroll {
   private scheduled = false;
   private selectionDirty = true;
   private scrollLeft = 0;
+  private cachedLayout: ReturnType<typeof readEditorTopLayout> | null = null;
+  private layoutDirty = true;
+  private contentDirty = true;
+  private lastTopLine = -1;
+  private visible = false;
+  private appliedLayoutKey = "";
 
   constructor(private view: EditorView) {
     this.dom = document.createElement("div");
@@ -152,6 +158,7 @@ class StickyScroll {
   }
 
   update(u: ViewUpdate) {
+    if (u.geometryChanged) this.layoutDirty = true;
     if (u.docChanged || u.selectionSet || u.geometryChanged) this.selectionDirty = true;
     if (
       u.docChanged ||
@@ -162,8 +169,10 @@ class StickyScroll {
       u.transactions.some((tr) => tr.reconfigured) ||
       syntaxTree(u.startState) !== syntaxTree(u.state) ||
       u.startState.field(backendFolds, false) !== u.state.field(backendFolds, false)
-    )
+    ) {
+      this.contentDirty = true;
       this.schedule();
+    }
   }
 
   private onScroll = () => this.schedule();
@@ -175,11 +184,29 @@ class StickyScroll {
       key: this,
       read: (view) => {
         this.scheduled = false;
-        const layout = readEditorTopLayout(view);
+        const layoutChanged = this.layoutDirty || !this.cachedLayout;
+        if (layoutChanged) {
+          this.cachedLayout = readEditorTopLayout(view);
+          this.layoutDirty = false;
+        }
+        const layout = this.cachedLayout!;
         const scrollTop = view.scrollDOM.scrollTop;
+        const scrollLeft = view.scrollDOM.scrollLeft;
         const docOffset = view.documentTop - layout.viewport.top + scrollTop;
         const lh = view.defaultLineHeight;
-        if (scrollTop - docOffset <= 0) return { lines: [] as number[], layout, scrollLeft: 0 };
+        if (scrollTop - docOffset <= 0) {
+          this.lastTopLine = 0;
+          this.contentDirty = false;
+          return { skip: false as const, lines: [] as number[], layout, scrollLeft: 0 };
+        }
+        const topLine = view.state.doc.lineAt(
+          view.lineBlockAtHeight(Math.min(scrollTop - docOffset + 1, view.contentHeight - 1)).from,
+        ).number;
+        if (!layoutChanged && !this.contentDirty && topLine === this.lastTopLine && scrollLeft === this.scrollLeft) {
+          return { skip: true as const };
+        }
+        this.lastTopLine = topLine;
+        this.contentDirty = false;
         // n sticky rows cover the first n visible lines; they show the n outermost
         // headers of the first line below them, as long as it has that many.
         const lineBelow = (n: number) => {
@@ -192,11 +219,22 @@ class StickyScroll {
           if (enclosing.length < n) break;
           headers = enclosing.slice(0, n);
         }
-        return { lines: headers, layout, scrollLeft: view.scrollDOM.scrollLeft };
+        return { skip: false as const, lines: headers, layout, scrollLeft };
       },
-      write: ({ lines, layout, scrollLeft }) => {
+      write: (result) => {
+        if (result.skip) return;
+        const { lines, layout, scrollLeft } = result;
         const state = this.view.state;
         const { top, left, width, rightInset, gutterWidth, numberWidth, numberLeft } = layout;
+        if (!lines.length) {
+          if (this.visible) {
+            this.dom.style.display = "none";
+            this.visible = false;
+          }
+          this.lines = [];
+          this.renderedFrom = null;
+          return;
+        }
         const texts = lines.map((n) => (n <= state.doc.lines ? state.doc.line(n).text : ""));
         const numbers = numberWidth > 0 ? lines.map((n) => editorLineNumber(state, n)) : [];
         const tree = syntaxTree(state);
@@ -211,17 +249,18 @@ class StickyScroll {
           prev.scanner === scanner &&
           texts.every((t, i) => t === prev.texts[i]) &&
           numbers.every((number, i) => number === prev.numbers[i]);
-        if (!lines.length) {
-          this.dom.style.display = "none";
-          this.lines = [];
-          this.renderedFrom = null;
-          return;
+        if (!this.visible) {
+          this.dom.style.display = "";
+          this.visible = true;
         }
-        this.dom.style.display = "";
-        this.dom.style.top = `${top}px`;
-        this.dom.style.left = `${left}px`;
-        this.dom.style.width = `${width}px`;
-        this.dom.style.paddingRight = `${rightInset}px`;
+        const layoutKey = `${top},${left},${width},${rightInset}`;
+        if (layoutKey !== this.appliedLayoutKey) {
+          this.dom.style.top = `${top}px`;
+          this.dom.style.left = `${left}px`;
+          this.dom.style.width = `${width}px`;
+          this.dom.style.paddingRight = `${rightInset}px`;
+          this.appliedLayoutKey = layoutKey;
+        }
         if (this.dom.style.tabSize !== String(state.tabSize)) {
           this.dom.style.tabSize = String(state.tabSize);
           this.selectionDirty = true;

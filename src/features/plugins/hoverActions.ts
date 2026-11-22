@@ -47,7 +47,9 @@ class HoverActionLayer {
   private shown: PlacedHoverAction[] = [];
   private visible = false;
   private readonly onMove = (event: MouseEvent) => this.handleMove(event);
-  private readonly onScroll = () => this.reposition();
+  private readonly onScroll = () => {
+    if (this.visible) this.reposition();
+  };
   private readonly onResize = () => this.reposition();
   private readonly onFocusIn = (event: FocusEvent) => {
     if (event.target instanceof Node && this.root.contains(event.target)) this.setVisible(true);

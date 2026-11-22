@@ -69,9 +69,10 @@ pub fn smooth_scrolling_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 #[cfg(target_os = "linux")]
 pub fn set_smooth_scrolling(platform: &tauri::webview::PlatformWebview, enabled: bool) {
-    use webkit2gtk::{SettingsExt, WebViewExt};
+    use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
     if let Some(settings) = platform.inner().settings() {
         settings.set_enable_smooth_scrolling(enabled);
+        settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Always);
     }
 }
 

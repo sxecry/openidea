@@ -68,6 +68,14 @@ class OverviewLane {
   private lastKey = "";
   /** The last pointer position over the editor, to re-check the thumb when it scrolls. */
   private pointer: { x: number; y: number } | null = null;
+  private geometryDirty = true;
+  private laneRect: { left: number; right: number; top: number } | null = null;
+  private scrollerTop = 0;
+  private thumbOffset = 0;
+  private thumbVisible = false;
+  private lastThumbTop = Number.NaN;
+  private lastThumbHeight = Number.NaN;
+  private onThumb = false;
   /**
    * The scrollbar thumb, drawn and dragged by the lane: the native scrollbar is hidden, so a
    * press on this strip stays here instead of reaching the text layer as a text drag.
@@ -94,6 +102,7 @@ class OverviewLane {
     // A window resize reaches the editor once per frame: keep the thumb current, which is one
     // measure, and coalesce the mark maths that walks every mark's line block.
     if (u.geometryChanged) {
+      this.geometryDirty = true;
       this.scheduleThumb();
       this.scheduleMarksLater();
       return;
@@ -101,7 +110,6 @@ class OverviewLane {
     if (
       u.docChanged ||
       u.heightChanged ||
-      u.viewportChanged ||
       u.selectionSet ||
       u.startState.facet(scrollbarMarks) !== u.state.facet(scrollbarMarks)
     )
@@ -197,17 +205,48 @@ class OverviewLane {
       key: this.thumb,
       read: () => {
         const s = this.scroller;
+        if (this.geometryDirty || !this.laneRect) {
+          const sRect = s.getBoundingClientRect();
+          const lRect = this.dom.getBoundingClientRect();
+          this.scrollerTop = sRect.top;
+          this.laneRect = { left: lRect.left, right: lRect.right, top: lRect.top };
+          // The lane starts at the top of the editor, the scrollbar at the top of the scroller.
+          this.thumbOffset = sRect.top - lRect.top;
+          this.geometryDirty = false;
+        }
         const thumb = scrollbarThumb(s.scrollTop, s.scrollHeight, s.clientHeight);
-        // The lane starts at the top of the editor, the scrollbar at the top of the scroller.
-        const offset = s.getBoundingClientRect().top - this.dom.getBoundingClientRect().top;
+        let over = false;
+        const p = this.pointer;
+        if (p && thumb && this.laneRect && p.x >= this.laneRect.left && p.x <= this.laneRect.right) {
+          const y = p.y - this.scrollerTop;
+          over = y >= thumb.top && y <= thumb.bottom;
+        }
         // The drawn thumb matches the geometry the drag maps onto, so the pointer keeps its grip.
-        return thumb && { top: thumb.top + offset, height: thumb.bottom - thumb.top };
+        return {
+          thumb: thumb && { top: thumb.top + this.thumbOffset, height: thumb.bottom - thumb.top },
+          over,
+        };
       },
-      write: (thumb) => {
-        this.thumb.style.display = thumb ? "" : "none";
-        if (!thumb) return;
-        this.thumb.style.top = `${thumb.top}px`;
-        this.thumb.style.height = `${thumb.height}px`;
+      write: ({ thumb, over }) => {
+        const visible = !!thumb;
+        if (visible !== this.thumbVisible) {
+          this.thumb.style.display = visible ? "" : "none";
+          this.thumbVisible = visible;
+        }
+        if (thumb) {
+          if (thumb.top !== this.lastThumbTop) {
+            this.thumb.style.transform = `translate3d(0, ${thumb.top}px, 0)`;
+            this.lastThumbTop = thumb.top;
+          }
+          if (thumb.height !== this.lastThumbHeight) {
+            this.thumb.style.height = `${thumb.height}px`;
+            this.lastThumbHeight = thumb.height;
+          }
+        }
+        if (over !== this.onThumb) {
+          this.dom.classList.toggle("cm-openidea-overview-onThumb", over);
+          this.onThumb = over;
+        }
       },
     });
   }
@@ -218,15 +257,21 @@ class OverviewLane {
    */
   private updateThumbPassThrough() {
     const p = this.pointer;
-    let over = false;
-    if (p) {
-      const lane = this.dom.getBoundingClientRect();
-      const s = this.scroller;
-      const thumb = scrollbarThumb(s.scrollTop, s.scrollHeight, s.clientHeight);
-      const y = p.y - s.getBoundingClientRect().top;
-      over = !!thumb && p.x >= lane.left && p.x <= lane.right && y >= thumb.top && y <= thumb.bottom;
+    if (!p) {
+      if (this.onThumb) {
+        this.dom.classList.remove("cm-openidea-overview-onThumb");
+        this.onThumb = false;
+      }
+      return;
     }
-    this.dom.classList.toggle("cm-openidea-overview-onThumb", over);
+    if (this.laneRect && (p.x < this.laneRect.left || p.x > this.laneRect.right)) {
+      if (this.onThumb) {
+        this.dom.classList.remove("cm-openidea-overview-onThumb");
+        this.onThumb = false;
+      }
+      return;
+    }
+    this.scheduleThumb();
   }
 
   private onPointerMove = (e: MouseEvent) => {
@@ -242,7 +287,6 @@ class OverviewLane {
 
   private onScroll = () => {
     this.scheduleThumb();
-    if (this.pointer) this.updateThumbPassThrough();
   };
 
   /** The thumb's own press: drag it, keeping the button state inside the lane. */

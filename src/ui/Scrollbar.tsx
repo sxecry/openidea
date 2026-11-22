@@ -26,15 +26,16 @@ export function Scrollbar({
   const thumb = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; top: number } | null>(null);
   const geometry = useRef<Geometry | null>(null);
+  const cached = useRef<CachedLayout>({ offsetTop: -1, height: -1, scrollHeight: -1, scrolls: false, size: -1 });
 
   useLayoutEffect(() => {
-    geometry.current = layout(target.current, track.current, thumb.current);
+    geometry.current = layout(target.current, track.current, thumb.current, cached.current);
   }, [target, contentHeight]);
   useEffect(() => {
     const el = target.current;
     if (!el) return;
     const sync = () => {
-      geometry.current = layout(el, track.current, thumb.current);
+      geometry.current = layout(el, track.current, thumb.current, cached.current);
     };
     el.addEventListener("scroll", sync, { passive: true });
     const observer = new ResizeObserver(sync);
@@ -82,23 +83,50 @@ export function Scrollbar({
 }
 
 type Geometry = { range: number; max: number };
+type CachedLayout = { offsetTop: number; height: number; scrollHeight: number; scrolls: boolean; size: number };
 
 /** Positions the track over `el` and the thumb at its scroll offset; null when nothing scrolls. */
-function layout(el: HTMLElement | null, t: HTMLElement | null, th: HTMLElement | null): Geometry | null {
+function layout(
+  el: HTMLElement | null,
+  t: HTMLElement | null,
+  th: HTMLElement | null,
+  cache: CachedLayout,
+): Geometry | null {
   if (!el || !t || !th) return null;
   const height = el.clientHeight;
-  const max = el.scrollHeight - height;
+  const scrollHeight = el.scrollHeight;
+  const max = scrollHeight - height;
   // WebKit can report scrollHeight a pixel over clientHeight after the scroller is resized to a
   // fractional height (dragging a splitter), with nothing overflowing: that is no scroll range.
   const scrolls = max > 1;
-  t.style.top = `${el.offsetTop}px`;
-  t.style.height = `${height}px`;
-  t.style.display = scrolls ? "" : "none";
-  if (!scrolls) return null;
-  const size = Math.max(MIN_THUMB, (height * height) / el.scrollHeight);
+  const offsetTop = el.offsetTop;
+  if (offsetTop !== cache.offsetTop) {
+    t.style.top = `${offsetTop}px`;
+    cache.offsetTop = offsetTop;
+  }
+  if (height !== cache.height) {
+    t.style.height = `${height}px`;
+    cache.height = height;
+  }
+  if (scrolls !== cache.scrolls || cache.scrollHeight === -1) {
+    t.style.display = scrolls ? "" : "none";
+    cache.scrolls = scrolls;
+  }
+  if (!scrolls) {
+    cache.scrollHeight = scrollHeight;
+    return null;
+  }
+  const size =
+    scrollHeight !== cache.scrollHeight || cache.size < 0
+      ? Math.max(MIN_THUMB, (height * height) / scrollHeight)
+      : cache.size;
+  if (size !== cache.size) {
+    th.style.height = `${size}px`;
+    cache.size = size;
+  }
+  cache.scrollHeight = scrollHeight;
   const range = height - size;
-  th.style.height = `${size}px`;
-  th.style.transform = `translateY(${(Math.min(max, el.scrollTop) / max) * range}px)`;
+  th.style.transform = `translate3d(0, ${(Math.min(max, el.scrollTop) / max) * range}px, 0)`;
   return range > 0 ? { range, max } : null;
 }
 

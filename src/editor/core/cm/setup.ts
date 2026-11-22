@@ -369,9 +369,23 @@ const tooltipSpace = tooltips({
   tooltipSpace: tooltipBounds,
 });
 
+const WHEEL_SCROLL_LINES = 3;
+
+const wheelScrollStep = EditorView.domEventHandlers({
+  wheel(e, view) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.deltaX !== 0 || e.deltaY === 0) return false;
+    // Discrete mouse wheel notches: scroll a crisp 3 lines per tick, bypassing sluggish WebKit wheel animation.
+    if (e.deltaMode !== WheelEvent.DOM_DELTA_LINE && Math.abs(e.deltaY) < 40) return false;
+    e.preventDefault();
+    view.scrollDOM.scrollTop += Math.sign(e.deltaY) * WHEEL_SCROLL_LINES * view.defaultLineHeight;
+    return true;
+  },
+});
+
 export function baseExtensions(o: SetupOptions): Extension {
   return [
     tooltipSpace,
+    wheelScrollStep,
     compartments.font.of(fontExtension(o.settings)),
     openideaTheme,
     compartments.lineNumbers.of(lineNumbersExtension(o.settings)),
